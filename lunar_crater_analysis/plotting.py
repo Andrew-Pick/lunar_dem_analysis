@@ -27,11 +27,11 @@ def plot_dem(dem_path):
 
         extent = (xmin/1000, xmax/1000, ymin/1000, ymax/1000)  # Convert to km for plotting
 
-        fig, ax = plt.subplot(figsize=(10, 8))
+        fig, ax = plt.subplots(figsize=(10, 8))
         im = ax.imshow(dem_data, cmap='terrain', extent=extent, origin='upper')
         fig.colorbar(im, ax=ax, label='Elevation (m)')
-        ax.xlabel('x (km)')
-        ax.ylabel('y (km)')
-        ax.show()
+        ax.set_xlabel('x (km)')
+        ax.set_ylabel('y (km)')
+        plt.show()
 
         return fig, ax
