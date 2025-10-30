@@ -2,7 +2,7 @@ import rasterio
 from rasterio.plot import show
 import matplotlib.pyplot as plt
 
-def plot_dem(dem_path, title):
+def plot_dem(dem_path):
     """
     Reads and plots a Digital Elevation Model (DEM) from the given file path.
     
@@ -30,7 +30,6 @@ def plot_dem(dem_path, title):
         fig, ax = plt.subplot(figsize=(10, 8))
         im = ax.imshow(dem_data, cmap='terrain', extent=extent, origin='upper')
         fig.colorbar(im, ax=ax, label='Elevation (m)')
-        ax.title(title)
         ax.xlabel('x (km)')
         ax.ylabel('y (km)')
         ax.show()
