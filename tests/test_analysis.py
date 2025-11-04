@@ -12,10 +12,10 @@ from crater_analysis.io import read_crater_locations
 crater_data = read_crater_locations('/home/andrew/lunar_dem_analysis/data/catalogs/moon_data.csv')
 
 # Filter craters for the southern polar region
-south_craters = filter_craters(crater_data, pole='south', lat_threshold=60)
+south_craters = filter_craters(crater_data, pole='south', lat_threshold=60, circ_threshold=0.85)
 
 # Filter craters for the northern polar region
-north_craters = filter_craters(crater_data, pole='north', lat_threshold=60) 
+north_craters = filter_craters(crater_data, pole='north', lat_threshold=60, circ_threshold=0.85)
 
 # Plot with both scatter and binned averages
-fig, ax = plot_depth_diameter_vs_latitude(north_craters, bins=10, show_scatter=True, show_binned=True)
+fig, ax = plot_depth_diameter_vs_latitude(south_craters, bins=10, show_scatter=True, show_binned=True)
