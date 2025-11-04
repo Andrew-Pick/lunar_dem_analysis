@@ -28,9 +28,9 @@ def calculate_crater_depth(dem_data, crater_center, crater_rim_radius):
 
     return rim_elevation - center_elevation
 
-def filter_craters(crater_data, pole='north', lat_threshold=60):
+def filter_craters(crater_data, pole='north', lat_threshold=60, circ_threshold=0.85):
     """
-    Filter crater data to include only craters from a specific polar region.
+    Filter crater data to include only craters from a specific polar region and above a circularity threshold.
     
     Parameters:
     - crater_data (pd.DataFrame): DataFrame containing crater data with a 'lat' column
@@ -38,7 +38,9 @@ def filter_craters(crater_data, pole='north', lat_threshold=60):
     - lat_threshold (float): Latitude threshold in degrees (default: 60)
                             For north pole: craters with lat >= lat_threshold
                             For south pole: craters with lat <= -lat_threshold
-    
+    - circ_threshold (float): Minimum circularity ratio to include crater (default: 0.85)
+                             Craters with circ >= circ_threshold are included
+
     Returns:
     - pd.DataFrame: Filtered DataFrame containing only polar craters
     
@@ -69,4 +71,6 @@ def filter_craters(crater_data, pole='north', lat_threshold=60):
     else:
         raise ValueError(f"pole must be 'north', 'south', or 'both', got '{pole}'")
     
+    filtered = filtered[filtered['circ'] >= circ_threshold]
+
     return filtered
