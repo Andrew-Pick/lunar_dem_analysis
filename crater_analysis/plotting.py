@@ -70,6 +70,7 @@ def plot_depth_diameter_vs_latitude(crater_data, bins=20, show_scatter=True, sho
     - bins (int): Number of latitude bins for averaging (default: 20)
     - show_scatter (bool): If True, show individual crater points (default: True)
     - show_binned (bool): If True, show binned averages (default: True)
+    - show_infill_lines (bool): If True, show theoretical infill lines (default: False)
     
     Returns:
     - fig, ax: matplotlib figure and axes objects
@@ -116,7 +117,7 @@ def plot_depth_diameter_vs_latitude(crater_data, bins=20, show_scatter=True, sho
         ax.errorbar(bin_centers, bin_means, yerr=bin_stds, 
                    color='red', linewidth=2, marker='o', markersize=6,
                    capsize=5, label=f'Binned average (n={bins})')
-    
+
     ax.set_xlabel('Latitude (degrees)', fontsize=12)
     ax.set_ylabel('Depth/Diameter Ratio', fontsize=12)
     ax.set_title('Crater Depth/Diameter vs Latitude', fontsize=14)
