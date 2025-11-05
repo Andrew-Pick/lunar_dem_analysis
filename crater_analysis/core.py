@@ -7,7 +7,7 @@ class Crater:
     This class acts as a container for the crater's location, the relevant
     DEM data, and the properties derived from analysis.
     """
-    def __init__(self, crater_id, dem_snippet, center_coords=None, global_coords=None):
+    def __init__(self, crater_id, dem_snippet, metadata, center_coords=None, global_coords=None):
         """
         Initializes a Crater instance.
 
@@ -15,6 +15,7 @@ class Crater:
         - crater_id (str or int): A unique identifier for the crater.
         - dem_snippet (np.array): A 2D NumPy array containing the DEM data
                                   for the area around the crater.
+        - metadata (dict): The metadata corresponding to the dem_snippet.
         - center_coords (tuple): The (row, col) coordinates of the crater's
                                  center within the dem_snippet.
         - global_coords (dict): A dictionary containing the global coordinates
@@ -22,6 +23,7 @@ class Crater:
         """
         self.id = crater_id
         self.dem_data = dem_snippet
+        self.metadata = metadata
         self.center = center_coords if center_coords is not None else {}
         self.global_coords = global_coords if global_coords is not None else {}
         self.properties = {}  # A dictionary to store calculated properties
