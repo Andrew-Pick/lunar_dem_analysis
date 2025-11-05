@@ -30,51 +30,72 @@ def calculate_crater_depth(dem_data, crater_center, crater_rim_radius):
 
     return rim_elevation - center_elevation
 
-def filter_craters(crater_data, pole='north', lat_threshold=60, circ_threshold=0.85):
+def filter_craters(
+    crater_data, 
+    pole='north', 
+    lat_threshold=60, 
+    circ_threshold=None, 
+    diam_min=None, 
+    diam_max=None,
+    lat_col='LAT_CIRC_IMG',
+    diam_col='DIAM_CIRC_IMG',
+    circ_col='circ'
+):
     """
-    Filter crater data to include only craters from a specific polar region and above a circularity threshold.
-    
+    Filter crater data based on location, circularity, and diameter.
+
+    This function is flexible and allows specifying column names for key attributes.
+
     Parameters:
-    - crater_data (pd.DataFrame): DataFrame containing crater data with a 'lat' column
-    - pole (str): Which pole to filter for: 'north', 'south', or 'both' (default: 'north')
-    - lat_threshold (float): Latitude threshold in degrees (default: 60)
-                            For north pole: craters with lat >= lat_threshold
-                            For south pole: craters with lat <= -lat_threshold
-    - circ_threshold (float): Minimum circularity ratio to include crater (default: 0.85)
-                             Craters with circ >= circ_threshold are included
+    - crater_data (pd.DataFrame): DataFrame containing crater data.
+    - pole (str): Which pole to filter for: 'north', 'south', or 'both' (default: 'north').
+    - lat_threshold (float): Latitude threshold in degrees (default: 60).
+    - circ_threshold (float, optional): Minimum circularity ratio. If None, this filter is skipped.
+    - diam_min (float, optional): Minimum crater diameter in meters.
+    - diam_max (float, optional): Maximum crater diameter in meters.
+    - lat_col (str): Name of the latitude column (default: 'lat').
+    - diam_col (str): Name of the diameter column (default: 'DIAM_ELLI_MAJOR_IMG').
+    - circ_col (str): Name of the circularity column (default: 'circ').
 
     Returns:
-    - pd.DataFrame: Filtered DataFrame containing only polar craters
-    
-    Examples:
-    >>> # Get only North polar craters (lat >= 60°)
-    >>> north_craters = filter_craters_by_latitude(crater_data, pole='north', lat_threshold=60)
-    
-    >>> # Get only South polar craters (lat <= -80°)
-    >>> south_craters = filter_craters_by_latitude(crater_data, pole='south', lat_threshold=80)
-    
-    >>> # Get both polar regions (|lat| >= 70°)
-    >>> polar_craters = filter_craters_by_latitude(crater_data, pole='both', lat_threshold=70)
+    - pd.DataFrame: Filtered DataFrame.
     """
-    if 'lat' not in crater_data.columns:
-        raise ValueError("crater_data must contain a 'lat' column")
+    # --- Validate required columns ---
+    required_cols = [lat_col]
+    if circ_threshold is not None:
+        required_cols.append(circ_col)
+    if diam_min is not None or diam_max is not None:
+        required_cols.append(diam_col)
     
+    for col in required_cols:
+        if col not in crater_data.columns:
+            raise ValueError(f"crater_data must contain a '{col}' column for the specified filtering.")
+
+    # Start with a copy of the original data
+    filtered = crater_data.copy()
+
+    # --- Latitude Filtering ---
     pole = pole.lower()
-    
     if pole == 'north':
-        filtered = crater_data[crater_data['lat'] >= lat_threshold].copy()
-        print(f"Filtered to {len(filtered)} North polar craters (lat >= {lat_threshold}°)")
+        filtered = filtered[filtered[lat_col] >= lat_threshold]
     elif pole == 'south':
-        filtered = crater_data[crater_data['lat'] <= -lat_threshold].copy()
-        print(f"Filtered to {len(filtered)} South polar craters (lat <= -{lat_threshold}°)")
+        filtered = filtered[filtered[lat_col] <= -lat_threshold]
     elif pole == 'both':
-        filtered = crater_data[np.abs(crater_data['lat']) >= lat_threshold].copy()
-        print(f"Filtered to {len(filtered)} polar craters (|lat| >= {lat_threshold}°)")
+        filtered = filtered[np.abs(filtered[lat_col]) >= lat_threshold]
     else:
         raise ValueError(f"pole must be 'north', 'south', or 'both', got '{pole}'")
     
-    filtered = filtered[filtered['circ'] >= circ_threshold]
+    # --- Circularity Filtering ---
+    if circ_threshold is not None:
+        filtered = filtered[filtered[circ_col] >= circ_threshold]
 
+    # --- Diameter Filtering ---
+    if diam_min is not None:
+        filtered = filtered[filtered[diam_col] >= diam_min]
+    if diam_max is not None:
+        filtered = filtered[filtered[diam_col] <= diam_max]
+        
+    print(f"Filtered to {len(filtered)} craters matching criteria.")
     return filtered
 
 def get_crater_profile(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, num_points=100, angle=0):
