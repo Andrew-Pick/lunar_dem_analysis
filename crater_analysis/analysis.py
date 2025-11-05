@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from scipy.ndimage import map_coordinates
 
 def calculate_crater_depth(dem_data, crater_center, crater_rim_radius):
     """
@@ -74,3 +75,49 @@ def filter_craters(crater_data, pole='north', lat_threshold=60, circ_threshold=0
     filtered = filtered[filtered['circ'] >= circ_threshold]
 
     return filtered
+
+def get_crater_profile(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, num_points=100, angle=0):
+    """
+    Extracts a 2D topographic profile across a crater from a DEM.
+
+    Parameters:
+    - dem_data (np.array): The 2D DEM elevation data.
+    - metadata (dict): DEM metadata containing the transform.
+    - crater_lon, crater_lat (float): Center coordinates of the crater in degrees.
+    - crater_diam_km (float): Diameter of the crater in kilometers.
+    - num_points (int): Number of points to sample along the profile.
+    - angle (float): Angle of the profile in degrees (0=horizontal, 90=vertical).
+
+    Returns:
+    - tuple: (distance_km, elevation)
+        - distance_km (np.array): Distance along the profile in km.
+        - elevation (np.array): Elevation at each point along the profile.
+    """
+    transform = metadata['transform']
+    
+    # Convert crater center from lon/lat to pixel coordinates
+    # Note: This assumes a simple projection. For polar data, this is an approximation.
+    # A more robust solution would use pyproj for coordinate transformations.
+    col, row = ~transform * (crater_lon, crater_lat)
+
+    # Define start and end points of the profile line in pixel coordinates
+    radius_pixels = (crater_diam_km * 1000 / transform.a) / 2
+    angle_rad = np.deg2rad(angle)
+    
+    start_col = col - radius_pixels * np.cos(angle_rad)
+    start_row = row - radius_pixels * np.sin(angle_rad)
+    end_col = col + radius_pixels * np.cos(angle_rad)
+    end_row = row + radius_pixels * np.sin(angle_rad)
+
+    # Generate sample points along the line
+    cols = np.linspace(start_col, end_col, num_points)
+    rows = np.linspace(start_row, end_row, num_points)
+    
+    # Extract elevation values using interpolation
+    # map_coordinates expects (row, col) order
+    elevation = map_coordinates(dem_data, [rows, cols], order=1, mode='nearest')
+    
+    # Calculate distance along the profile
+    distance_km = np.linspace(-crater_diam_km / 2, crater_diam_km / 2, num_points)
+    
+    return distance_km, elevation
