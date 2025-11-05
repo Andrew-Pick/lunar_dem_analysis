@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from scipy.ndimage import map_coordinates
 from rasterio.transform import Affine
+import pyproj
+from pyproj import CRS
 
 def calculate_crater_depth(dem_data, crater_center, crater_rim_radius):
     """
@@ -98,6 +100,14 @@ def filter_craters(
     print(f"Filtered to {len(filtered)} craters matching criteria.")
     return filtered
 
+
+def _transform_coords(from_crs, to_crs, lon, lat):
+    """Helper function to transform coordinates between CRS."""
+    transformer = pyproj.Transformer.from_crs(from_crs, to_crs, always_xy=True)
+    proj_lon, proj_lat = transformer.transform(lon, lat)
+    return proj_lon, proj_lat
+
+
 def get_crater_profile(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, num_points=100, angle=0):
     """
     Extracts a 2D topographic profile across a crater from a DEM.
@@ -116,11 +126,17 @@ def get_crater_profile(dem_data, metadata, crater_lon, crater_lat, crater_diam_k
         - elevation (np.array): Elevation at each point along the profile.
     """
     transform = metadata['transform']
-    
-    # Convert crater center from lon/lat to pixel coordinates
-    # Note: This assumes a simple projection. For polar data, this is an approximation.
-    # A more robust solution would use pyproj for coordinate transformations.
-    col, row = ~transform * (crater_lon, crater_lat)
+    dem_crs = metadata['crs']
+
+    # Create a geographic CRS for the Moon using PROJ string
+    # Moon radius: 1737.4 km, using a sphere for simplicity
+    geographic_crs = CRS.from_proj4("+proj=longlat +a=1737400 +b=1737400 +no_defs")
+
+    # Transform crater center from geographic (lon/lat) to the DEM's projected CRS
+    proj_lon, proj_lat = _transform_coords(geographic_crs, dem_crs, crater_lon, crater_lat)
+
+    # Convert projected coordinates to pixel coordinates using the inverse affine transform
+    col, row = ~transform * (proj_lon, proj_lat)
 
     # Define start and end points of the profile line in pixel coordinates
     radius_pixels = (crater_diam_km * 1000 / transform.a) / 2
@@ -165,9 +181,17 @@ def get_dem_snippet(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, 
                                      *within the snippet*.
     """
     transform = metadata['transform']
+    dem_crs = metadata['crs']
+
+    # Create a geographic CRS for the Moon using PROJ string
+    # Moon radius: 1737.4 km, using a sphere for simplicity
+    geographic_crs = CRS.from_proj4("+proj=longlat +a=1737400 +b=1737400 +no_defs")
+
+    # Transform crater center from geographic (lon/lat) to the DEM's projected CRS
+    proj_lon, proj_lat = _transform_coords(geographic_crs, dem_crs, crater_lon, crater_lat)
     
-    # Convert crater center from lon/lat to pixel coordinates
-    col, row = ~transform * (crater_lon, crater_lat)
+    # Convert projected coordinates to pixel coordinates
+    col, row = ~transform * (proj_lon, proj_lat)
     
     # Calculate snippet size in pixels
     radius_pixels = (crater_diam_km * 1000 / abs(transform.a)) / 2
