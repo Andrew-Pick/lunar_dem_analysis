@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.ndimage import map_coordinates
+from rasterio.transform import Affine
 
 def calculate_crater_depth(dem_data, crater_center, crater_rim_radius):
     """
@@ -171,10 +172,9 @@ def get_dem_snippet(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, 
     
     # Update the transform
     # The new transform has the same pixel size but a new origin
-    new_transform = list(transform) # Convert to list for modification
-    new_transform[2] = new_origin_lon
-    new_transform[5] = new_origin_lat
-    snippet_metadata['transform'] = tuple(new_transform)
+    new_transform = Affine(transform.a, transform.b, new_origin_lon,
+                           transform.d, transform.e, new_origin_lat)
+    snippet_metadata['transform'] = new_transform
 
     # Calculate the crater's center coordinates *relative to the snippet*
     center_in_snippet_row = row - min_row
