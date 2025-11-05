@@ -124,7 +124,7 @@ def get_crater_profile(dem_data, metadata, crater_lon, crater_lat, crater_diam_k
 
 def get_dem_snippet(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, padding_factor=1.5):
     """
-    Extracts a square DEM snippet centered on a crater.
+    Extracts a square DEM snippet centered on a crater and its corresponding metadata.
 
     Parameters:
     - dem_data (np.array): The full 2D DEM elevation data.
@@ -136,8 +136,9 @@ def get_dem_snippet(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, 
                               will be 1.5x the crater's diameter.
 
     Returns:
-    - tuple: (dem_snippet, center_in_snippet)
+    - tuple: (dem_snippet, snippet_metadata, center_in_snippet)
         - dem_snippet (np.array): The cropped 2D DEM data.
+        - snippet_metadata (dict): The updated metadata for the snippet.
         - center_in_snippet (tuple): The (row, col) of the crater's center
                                      *within the snippet*.
     """
@@ -159,8 +160,24 @@ def get_dem_snippet(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, 
     # Crop the DEM
     dem_snippet = dem_data[min_row:max_row, min_col:max_col]
     
+    # Calculate the new transform for the snippet
+    # The new origin is the top-left corner of the snippet in the original DEM's coordinates
+    new_origin_lon, new_origin_lat = transform * (min_col, min_row)
+    
+    # Create a copy of the original metadata and update it
+    snippet_metadata = metadata.copy()
+    snippet_metadata['width'] = dem_snippet.shape[1]
+    snippet_metadata['height'] = dem_snippet.shape[0]
+    
+    # Update the transform
+    # The new transform has the same pixel size but a new origin
+    new_transform = list(transform) # Convert to list for modification
+    new_transform[2] = new_origin_lon
+    new_transform[5] = new_origin_lat
+    snippet_metadata['transform'] = tuple(new_transform)
+
     # Calculate the crater's center coordinates *relative to the snippet*
     center_in_snippet_row = row - min_row
     center_in_snippet_col = col - min_col
     
-    return dem_snippet, (center_in_snippet_row, center_in_snippet_col)
+    return dem_snippet, snippet_metadata, (center_in_snippet_row, center_in_snippet_col)

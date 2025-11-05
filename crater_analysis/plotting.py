@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-def plot_dem(dem_data, profile):
+def plot_dem(dem_data, metadata):
     """
     Reads and plots a Digital Elevation Model (DEM) from the given file path.
     
@@ -13,7 +13,7 @@ def plot_dem(dem_data, profile):
     dem_path (str): Path to the DEM file.
     title (str): Title for the plot.
     """
-    transform = profile['transform']
+    transform = metadata['transform']
     height, width = dem_data.shape
     xres = transform.a  # Pixel width in m
     yres = -transform.e  # Pixel height in m (negative because of the coordinate system)
