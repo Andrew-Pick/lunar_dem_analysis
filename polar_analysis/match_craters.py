@@ -67,4 +67,4 @@ def plot_craters_on_dem(dem_path, body, crater_path, pole, limit, plotname):  # 
         plt.ylabel('y(km)')
         plt.savefig(f'plots/{plotname}', dpi=300)
 
-plot_craters_on_dem('LDEM_85S_20M.JP2', 'Moon', 'moon_data.csv', 'S', 85, 'test.png')
+plot_craters_on_dem('data/dems/LDEM_85S_40M.JP2', 'Moon', 'data/catalogs/lunar_crater_database_robbins_2018.csv', 'S', 85, 'test.png')
