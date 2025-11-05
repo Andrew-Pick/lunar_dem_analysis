@@ -121,3 +121,46 @@ def get_crater_profile(dem_data, metadata, crater_lon, crater_lat, crater_diam_k
     distance_km = np.linspace(-crater_diam_km / 2, crater_diam_km / 2, num_points)
     
     return distance_km, elevation
+
+def get_dem_snippet(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, padding_factor=1.5):
+    """
+    Extracts a square DEM snippet centered on a crater.
+
+    Parameters:
+    - dem_data (np.array): The full 2D DEM elevation data.
+    - metadata (dict): DEM metadata containing the transform.
+    - crater_lon, crater_lat (float): Center coordinates of the crater in degrees.
+    - crater_diam_km (float): Diameter of the crater in kilometers.
+    - padding_factor (float): Multiplier for the crater diameter to determine the
+                              size of the snippet. E.g., 1.5 means the snippet
+                              will be 1.5x the crater's diameter.
+
+    Returns:
+    - tuple: (dem_snippet, center_in_snippet)
+        - dem_snippet (np.array): The cropped 2D DEM data.
+        - center_in_snippet (tuple): The (row, col) of the crater's center
+                                     *within the snippet*.
+    """
+    transform = metadata['transform']
+    
+    # Convert crater center from lon/lat to pixel coordinates
+    col, row = ~transform * (crater_lon, crater_lat)
+    
+    # Calculate snippet size in pixels
+    radius_pixels = (crater_diam_km * 1000 / abs(transform.a)) / 2
+    snippet_radius_pixels = int(radius_pixels * padding_factor)
+    
+    # Define the bounding box, ensuring it's within the DEM bounds
+    min_row = max(0, int(row - snippet_radius_pixels))
+    max_row = min(dem_data.shape[0], int(row + snippet_radius_pixels))
+    min_col = max(0, int(col - snippet_radius_pixels))
+    max_col = min(dem_data.shape[1], int(col + snippet_radius_pixels))
+    
+    # Crop the DEM
+    dem_snippet = dem_data[min_row:max_row, min_col:max_col]
+    
+    # Calculate the crater's center coordinates *relative to the snippet*
+    center_in_snippet_row = row - min_row
+    center_in_snippet_col = col - min_col
+    
+    return dem_snippet, (center_in_snippet_row, center_in_snippet_col)
