@@ -108,57 +108,104 @@ def _transform_coords(from_crs, to_crs, lon, lat):
     return proj_lon, proj_lat
 
 
-def get_crater_profile(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, num_points=100, angle=0):
+def get_crater_profile(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, angle=0):
     """
-    Extracts a 2D topographic profile across a crater from a DEM.
+    Extracts a 2D topographic profile by sampling actual DEM pixels (no interpolation).
+    Uses Bresenham-like line rasterization to get exact pixel values.
 
     Parameters:
     - dem_data (np.array): The 2D DEM elevation data.
     - metadata (dict): DEM metadata containing the transform.
     - crater_lon, crater_lat (float): Center coordinates of the crater in degrees.
     - crater_diam_km (float): Diameter of the crater in kilometers.
-    - num_points (int): Number of points to sample along the profile.
     - angle (float): Angle of the profile in degrees (0=horizontal, 90=vertical).
 
     Returns:
-    - tuple: (distance_km, elevation)
+    - tuple: (distance_km, elevation, pixel_coords)
         - distance_km (np.array): Distance along the profile in km.
-        - elevation (np.array): Elevation at each point along the profile.
+        - elevation (np.array): Elevation at each pixel.
+        - pixel_coords (np.array): The (row, col) coordinates of each sampled pixel.
     """
     transform = metadata['transform']
     dem_crs = metadata['crs']
-
+    
     # Create a geographic CRS for the Moon using PROJ string
-    # Moon radius: 1737.4 km, using a sphere for simplicity
     geographic_crs = CRS.from_proj4("+proj=longlat +a=1737400 +b=1737400 +no_defs")
 
     # Transform crater center from geographic (lon/lat) to the DEM's projected CRS
     proj_lon, proj_lat = _transform_coords(geographic_crs, dem_crs, crater_lon, crater_lat)
 
-    # Convert projected coordinates to pixel coordinates using the inverse affine transform
+    # Convert projected coordinates to pixel coordinates
     col, row = ~transform * (proj_lon, proj_lat)
 
     # Define start and end points of the profile line in pixel coordinates
-    radius_pixels = (crater_diam_km * 1000 / transform.a) / 2
+    radius_pixels = (crater_diam_km * 1000 / abs(transform.a)) / 2
     angle_rad = np.deg2rad(angle)
     
-    start_col = col - radius_pixels * np.cos(angle_rad)
-    start_row = row - radius_pixels * np.sin(angle_rad)
-    end_col = col + radius_pixels * np.cos(angle_rad)
-    end_row = row + radius_pixels * np.sin(angle_rad)
+    start_col = int(round(col - radius_pixels * np.cos(angle_rad)))
+    start_row = int(round(row - radius_pixels * np.sin(angle_rad)))
+    end_col = int(round(col + radius_pixels * np.cos(angle_rad)))
+    end_row = int(round(row + radius_pixels * np.sin(angle_rad)))
 
-    # Generate sample points along the line
-    cols = np.linspace(start_col, end_col, num_points)
-    rows = np.linspace(start_row, end_row, num_points)
+    # Use Bresenham-like algorithm to get all pixels along the line
+    pixel_coords = _bresenham_line(start_row, start_col, end_row, end_col)
     
-    # Extract elevation values using interpolation
-    # map_coordinates expects (row, col) order
-    elevation = map_coordinates(dem_data, [rows, cols], order=1, mode='nearest')
+    # Filter out any pixels outside the DEM bounds
+    valid_pixels = []
+    for r, c in pixel_coords:
+        if 0 <= r < dem_data.shape[0] and 0 <= c < dem_data.shape[1]:
+            valid_pixels.append((r, c))
     
-    # Calculate distance along the profile
-    distance_km = np.linspace(-crater_diam_km / 2, crater_diam_km / 2, num_points)
+    pixel_coords = np.array(valid_pixels)
     
-    return distance_km, elevation
+    # Extract elevation values at each pixel
+    elevation = dem_data[pixel_coords[:, 0], pixel_coords[:, 1]]
+    
+    # Calculate distance from center for each pixel
+    pixel_size_km = abs(transform.a) / 1000.0
+    center_idx = len(pixel_coords) // 2
+    distances = np.arange(len(pixel_coords)) - center_idx
+    distance_km = distances * pixel_size_km
+    
+    return distance_km, elevation, pixel_coords
+
+
+def _bresenham_line(y0, x0, y1, x1):
+    """
+    Bresenham's line algorithm to get all integer pixel coordinates along a line.
+    
+    Parameters:
+    - y0, x0: Starting point (row, col)
+    - y1, x1: Ending point (row, col)
+    
+    Returns:
+    - list of (row, col) tuples representing pixels along the line
+    """
+    pixels = []
+    dx = abs(x1 - x0)
+    dy = abs(y1 - y0)
+    sx = 1 if x0 < x1 else -1
+    sy = 1 if y0 < y1 else -1
+    err = dx - dy
+    
+    x, y = x0, y0
+    
+    while True:
+        pixels.append((y, x))
+        
+        if x == x1 and y == y1:
+            break
+            
+        e2 = 2 * err
+        if e2 > -dy:
+            err -= dy
+            x += sx
+        if e2 < dx:
+            err += dx
+            y += sy
+    
+    return pixels
+
 
 def get_dem_snippet(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, padding_factor=1.5):
     """
