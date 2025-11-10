@@ -97,34 +97,35 @@ def plot_depth_diameter_vs_latitude(crater_data, bins=20, show_scatter=True, sho
         lat_bins = np.linspace(clean_data['lat'].min(), clean_data['lat'].max(), bins + 1)
         bin_centers = (lat_bins[:-1] + lat_bins[1:]) / 2
         
-        # Calculate mean and std for each bin
+        # Calculate mean, std, and SEM for each bin
         bin_means = []
-        bin_stds = []
+        bin_sems = []
         for i in range(len(lat_bins) - 1):
             mask = (clean_data['lat'] >= lat_bins[i]) & (clean_data['lat'] < lat_bins[i+1])
             bin_data = clean_data[mask]['dD']
             if len(bin_data) > 0:
                 bin_means.append(bin_data.mean())
-                bin_stds.append(bin_data.std())
+                # Calculate standard error of the mean: SEM = std / sqrt(n)
+                bin_sems.append(bin_data.std() / np.sqrt(len(bin_data)))
             else:
                 bin_means.append(np.nan)
-                bin_stds.append(np.nan)
+                bin_sems.append(np.nan)
         
         bin_means = np.array(bin_means)
-        bin_stds = np.array(bin_stds)
+        bin_sems = np.array(bin_sems)
         
-        # Plot binned averages with error bars
-        ax.errorbar(bin_centers, bin_means, yerr=bin_stds, 
+        # Plot binned averages with error bars (SEM)
+        ax.errorbar(bin_centers, bin_means, yerr=bin_sems, 
                    color='red', linewidth=2, marker='o', markersize=6,
                    capsize=5, label=f'Binned average (n={bins})')
 
     ax.set_xlabel('Latitude (degrees)', fontsize=12)
     ax.set_ylabel('Depth/Diameter Ratio', fontsize=12)
-    ax.set_title('Crater Depth/Diameter vs Latitude', fontsize=14)
     ax.grid(True, alpha=0.3)
     ax.legend()
     
     plt.tight_layout()
-    plt.show()
+    # Don't call plt.show() here - let the caller control when to display
+    # plt.show()
     
     return fig, ax
