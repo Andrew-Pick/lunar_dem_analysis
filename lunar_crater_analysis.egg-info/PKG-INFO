@@ -3,5 +3,12 @@ Name: lunar_crater_analysis
 Version: 0.1.0
 Summary: A toolkit for analyzing lunar crater DEMs.
 Author: Andrew-Pick
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: rasterio
+Requires-Dist: scipy
+Requires-Dist: matplotlib
+Requires-Dist: pyproj
 Dynamic: author
+Dynamic: requires-dist
 Dynamic: summary
