@@ -2,7 +2,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 # Add the project root to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), '..')))
+#sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), '..')))
+#sys.path.append("~/lunar_dem_analysis/crater_analysis")
 
 from crater_analysis.io import read_crater_locations, read_dem
 from crater_analysis.analysis import filter_craters, get_crater_profile, get_dem_snippet
@@ -10,7 +11,7 @@ from crater_analysis.plotting import plot_dem, plot_crater_locations
 from crater_analysis.core import Crater
 
 
-dem, metadata = read_dem('../data/dems/LDEM_60S_120M.JP2')
+dem, metadata = read_dem('/cosma8/data/dp203/dc-pick1/Projects/Ongoing/DEMs/LDEM_60S_120M.JP2')
 
 lat = 'lat'
 lon = 'lon'
@@ -19,7 +20,7 @@ diam = 'diameter_m'
 #craters = read_crater_locations('../data/catalogs/lunar_crater_database_robbins_2018.csv')
 #craters = filter_craters(craters, pole='south', lat_threshold=60, circ_threshold=None, diam_min=8, diam_max=None, lat_col='LAT_CIRC_IMG', diam_col='DIAM_CIRC_IMG')
 
-craters = read_crater_locations('../data/catalogs/moon_data.csv')
+craters = read_crater_locations('./catalogs/moon_data.csv')
 craters = filter_craters(craters, pole='south', lat_threshold=60, circ_threshold=0.85, diam_min=8000, diam_max=None, lat_col=lat, diam_col=diam)
 
 craters.head()
@@ -35,7 +36,7 @@ for index, row in craters.head(100).iterrows():
     crater_id = None #row['CRATER_ID']
     crater_lon = row[lon]
     crater_lat = row[lat]
-    crater_diam_km = row[diam] #/1000.0  # Convert diameter from meters to kilometers
+    crater_diam_km = row[diam] /1000.0  # Convert diameter from meters to kilometers
     
     # Get the DEM snippet for this crater
     dem_snippet, snippet_meta, center_coords = get_dem_snippet(
