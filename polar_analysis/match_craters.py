@@ -56,7 +56,7 @@ def plot_craters_on_dem(dem_path, body, crater_path, pole, limit, plotname):  # 
                 theta = (3 * np.pi / 2 + lon * (np.pi / 180)) #% (2*np.pi) # Get north pole angle
             x = r * np.cos(theta)
             y = r * np.sin(theta)
-            plt.plot(x / 1000, y / 1000, 'ro')  # Plot crater location in km
+            plt.plot(x / 1000, y / 1000, 'ro', marker='.')  # Plot crater location in km
             print(r, theta)
             print(x, y)
             #row, col = dataset.index(x, y)
@@ -64,7 +64,7 @@ def plot_craters_on_dem(dem_path, body, crater_path, pole, limit, plotname):  # 
 
         plt.title(plotname)
         plt.xlabel('x (km)')
-        plt.ylabel('y(km)')
-        plt.savefig(f'plots/{plotname}', dpi=300)
+        plt.ylabel('y (km)')
+        plt.savefig(f'plots/{plotname}', dpi=600)
 
-plot_craters_on_dem('data/dems/LDEM_85S_40M.JP2', 'Moon', 'data/catalogs/lunar_crater_database_robbins_2018.csv', 'S', 85, 'test.png')
+plot_craters_on_dem('/cosma8/data/dp203/dc-pick1/Projects/Ongoing/DEMs/LDEM_85S_10M.JP2', 'Moon', 'moon_data.csv', 'S', 85, '85S_10M.png')
