@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.ndimage import map_coordinates
+from scipy.optimize import curve_fit
 from rasterio.transform import Affine
 import pyproj
 from pyproj import CRS
@@ -205,6 +206,42 @@ def _bresenham_line(y0, x0, y1, x1):
             y += sy
     
     return pixels
+
+
+def detrend_profile(distance, elevation):
+    """
+    Remove large-scale slope effects from a profile by subtracting a linear least squares fit.
+    
+    This is useful for analyzing crater morphology without regional slope bias.
+    
+    Parameters:
+    - distance (np.array): Distance along the profile (e.g., in km)
+    - elevation (np.array): Elevation values along the profile (e.g., in meters)
+    
+    Returns:
+    - tuple: (detrended_elevation, slope, intercept)
+        - detrended_elevation (np.array): Elevation with linear trend removed
+        - slope (float): Slope of the best-fit line (elevation units / distance units)
+        - intercept (float): Intercept of the best-fit line (elevation units)
+    
+    Example:
+    >>> distance = np.array([0, 1, 2, 3, 4])
+    >>> elevation = np.array([100, 102, 104, 106, 108])  # Linear trend
+    >>> detrended, slope, intercept = detrend_profile(distance, elevation)
+    >>> # detrended will be close to zero (within numerical precision)
+    """
+    # Perform linear least squares fit
+    # np.polyfit with degree 1 gives [slope, intercept]
+    coeffs = np.polyfit(distance, elevation, deg=1)
+    slope, intercept = coeffs
+    
+    # Calculate the linear trend
+    linear_trend = slope * distance + intercept
+    
+    # Subtract the trend from the elevation
+    detrended_elevation = elevation - linear_trend
+    
+    return detrended_elevation, slope, intercept
 
 
 def get_dem_snippet(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, padding_factor=1.5):
