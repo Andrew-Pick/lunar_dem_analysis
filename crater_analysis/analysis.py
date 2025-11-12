@@ -230,13 +230,16 @@ def detrend_profile(distance, elevation):
     >>> detrended, slope, intercept = detrend_profile(distance, elevation)
     >>> # detrended will be close to zero (within numerical precision)
     """
-    # Perform linear least squares fit
-    # np.polyfit with degree 1 gives [slope, intercept]
-    coeffs = np.polyfit(distance, elevation, deg=1)
-    slope, intercept = coeffs
+    # Perform linear least squares fit using the new numpy.polynomial API
+    # Polynomial.fit returns a Polynomial object for degree 1 (linear)
+    poly = np.polynomial.Polynomial.fit(distance, elevation, deg=1)
     
-    # Calculate the linear trend
-    linear_trend = slope * distance + intercept
+    # Extract coefficients: poly.coef[0] is intercept, poly.coef[1] is slope
+    intercept = poly.coef[0]
+    slope = poly.coef[1]
+    
+    # Calculate the linear trend using the polynomial
+    linear_trend = poly(distance)
     
     # Subtract the trend from the elevation
     detrended_elevation = elevation - linear_trend
