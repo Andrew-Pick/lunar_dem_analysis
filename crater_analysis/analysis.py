@@ -208,6 +208,87 @@ def _bresenham_line(y0, x0, y1, x1):
     return pixels
 
 
+def smooth_profile(elevation, sigma=3):
+    """
+    Apply Gaussian smoothing to remove small-scale topographic noise from a profile.
+    
+    Uses a 1D Gaussian filter to smooth the elevation data, which is useful for
+    removing high-frequency noise while preserving the overall crater morphology.
+    
+    Parameters:
+    - elevation (np.array): Elevation values along the profile (e.g., in meters)
+    - sigma (float): Standard deviation of the Gaussian kernel in pixels/samples.
+                     Larger values = more smoothing (default: 3)
+                     Recommended range: 1-5
+    
+    Returns:
+    - np.array: Smoothed elevation profile
+    
+    Example:
+    >>> elevation = np.array([100, 105, 102, 108, 103])  # Noisy data
+    >>> smoothed = smooth_profile(elevation, sigma=2)
+    >>> # smoothed will have reduced high-frequency variations
+    
+    Notes:
+    - sigma=1-2: Light smoothing, preserves most detail
+    - sigma=3-5: Moderate smoothing, good for typical noise
+    - sigma>5: Heavy smoothing, may over-smooth real features
+    - Apply smoothing BEFORE detrending for best results
+    """
+    from scipy.ndimage import gaussian_filter1d
+    return gaussian_filter1d(elevation, sigma=sigma)
+
+
+def find_crater_floor(distance, elevation):
+    """
+    Find the deepest point in a crater profile using the second derivative.
+    
+    Following the Rubanenko et al. method: after detrending and smoothing,
+    calculate the second derivative to identify the location of maximum curvature
+    (deepest point) in the crater floor.
+    
+    Uses finite difference approximation via numpy.gradient for numerical derivatives.
+    
+    Parameters:
+    - distance (np.array): Distance along the profile (e.g., in km)
+    - elevation (np.array): Elevation values along the profile (e.g., in meters)
+                           Should already be detrended and smoothed
+    
+    Returns:
+    - tuple: (floor_idx, floor_distance, floor_elevation, second_derivative)
+        - floor_idx (int): Array index of the deepest point
+        - floor_distance (float): Distance coordinate of the deepest point
+        - floor_elevation (float): Elevation at the deepest point
+        - second_derivative (np.array): The computed second derivative
+    
+    Example:
+    >>> distance = np.linspace(-5, 5, 100)
+    >>> elevation = -(distance**2)  # Parabola with minimum at center
+    >>> idx, dist, elev, d2 = find_crater_floor(distance, elevation)
+    >>> # idx will be near 50 (center), dist near 0
+    
+    Notes:
+    - The second derivative is positive at minima (concave up)
+    - This function finds the point with the MAXIMUM second derivative
+    - For best results, apply to detrended and smoothed profiles
+    - Near boundaries, finite differences are less accurate
+    """
+    # Calculate first derivative using central differences
+    first_derivative = np.gradient(elevation, distance)
+    
+    # Calculate second derivative using central differences
+    second_derivative = np.gradient(first_derivative, distance)
+    
+    # Find the location of maximum second derivative (deepest point/highest curvature)
+    # In a crater bowl, the floor has positive second derivative (concave up)
+    floor_idx = np.argmax(second_derivative)
+    
+    floor_distance = distance[floor_idx]
+    floor_elevation = elevation[floor_idx]
+    
+    return floor_idx, floor_distance, floor_elevation, second_derivative
+
+
 def detrend_profile(distance, elevation):
     """
     Remove large-scale slope effects from a profile by subtracting a linear least squares fit.
