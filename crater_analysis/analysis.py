@@ -244,8 +244,8 @@ def find_crater_floor(distance, elevation):
     Find the deepest point in a crater profile using the second derivative.
     
     Following the Rubanenko et al. method: after detrending and smoothing,
-    calculate the second derivative to identify the location of maximum curvature
-    (deepest point) in the crater floor.
+    calculate the second derivative to identify inflection points, then
+    find the lowest inflection point as the crater floor.
     
     Uses finite difference approximation via numpy.gradient for numerical derivatives.
     
@@ -268,8 +268,9 @@ def find_crater_floor(distance, elevation):
     >>> # idx will be near 50 (center), dist near 0
     
     Notes:
-    - The second derivative is positive at minima (concave up)
-    - This function finds the point with the MAXIMUM second derivative
+    - Finds zero-crossings of the second derivative (inflection points)
+    - Returns the inflection point with the lowest elevation
+    - Fallback: if no inflection points found, returns global minimum elevation
     - For best results, apply to detrended and smoothed profiles
     - Near boundaries, finite differences are less accurate
     """
@@ -279,9 +280,17 @@ def find_crater_floor(distance, elevation):
     # Calculate second derivative using central differences
     second_derivative = np.gradient(first_derivative, distance)
     
-    # Find the location of maximum second derivative (deepest point/highest curvature)
-    # In a crater bowl, the floor has positive second derivative (concave up)
-    floor_idx = np.argmax(second_derivative)
+    # Find zero-crossings of second derivative (inflection points)
+    # Look for sign changes in the second derivative
+    sign_changes = np.diff(np.sign(second_derivative))
+    inflection_indices = np.where(sign_changes != 0)[0]
+    
+    if len(inflection_indices) > 0:
+        # Find the inflection point with the lowest elevation
+        floor_idx = inflection_indices[np.argmin(elevation[inflection_indices])]
+    else:
+        # Fallback: if no inflection points found, use global minimum
+        floor_idx = np.argmin(elevation)
     
     floor_distance = distance[floor_idx]
     floor_elevation = elevation[floor_idx]
