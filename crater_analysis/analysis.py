@@ -298,6 +298,84 @@ def find_crater_floor(distance, elevation):
     return floor_idx, floor_distance, floor_elevation, second_derivative
 
 
+def find_crater_rims(distance, elevation, floor_idx, threshold_fraction=0.1):
+    """
+    Find crater rims using the Rubanenko et al. method.
+    
+    Starting from the crater floor, divide the profile into two parts (left and right).
+    For each side, find the steepest slope, then locate where the slope decreases
+    to a specified fraction of that maximum slope. This identifies the rim locations.
+    
+    Parameters:
+    - distance (np.array): Distance along the profile (e.g., in km)
+    - elevation (np.array): Elevation values along the profile (e.g., in meters)
+                           Should already be detrended and smoothed
+    - floor_idx (int): Array index of the crater floor (from find_crater_floor)
+    - threshold_fraction (float): Fraction of steepest slope to use as threshold
+                                 (default: 0.1 for 10%)
+    
+    Returns:
+    - tuple: (left_rim_idx, right_rim_idx, left_rim_distance, right_rim_distance, first_derivative)
+        - left_rim_idx (int): Array index of the left rim
+        - right_rim_idx (int): Array index of the right rim
+        - left_rim_distance (float): Distance coordinate of left rim
+        - right_rim_distance (float): Distance coordinate of right rim
+        - first_derivative (np.array): The computed first derivative
+    
+    Example:
+    >>> floor_idx, _, _, _ = find_crater_floor(distance, elevation)
+    >>> left_idx, right_idx, left_dist, right_dist, deriv = find_crater_rims(distance, elevation, floor_idx)
+    >>> diameter = right_dist - left_dist
+    
+    Notes:
+    - The first derivative is calculated using numpy.gradient (central differences)
+    - Left side: looks for steepest negative slope (descending into crater)
+    - Right side: looks for steepest positive slope (ascending from crater)
+    - Rims are where slope magnitude drops below threshold_fraction * max_slope
+    - For best results, apply to detrended and smoothed profiles
+    """
+    # Calculate first derivative using central differences
+    first_derivative = np.gradient(elevation, distance)
+    
+    # Split profile into left (before floor) and right (after floor) sections
+    left_section = slice(0, floor_idx + 1)
+    right_section = slice(floor_idx, len(distance))
+    
+    # LEFT SIDE: Find steepest negative slope (going down into crater)
+    left_slopes = first_derivative[left_section]
+    left_steepest_idx_local = np.argmin(left_slopes)  # Local index in left section
+    left_steepest_idx = left_steepest_idx_local  # Convert to global index
+    left_steepest_slope = left_slopes[left_steepest_idx_local]
+    left_threshold = threshold_fraction * abs(left_steepest_slope)
+    
+    # Search outward from the STEEPEST SLOPE point (not from floor)
+    # This avoids picking the crater floor as the rim
+    left_rim_idx = 0  # Default to edge if not found
+    for i in range(left_steepest_idx, -1, -1):
+        if abs(first_derivative[i]) < left_threshold:
+            left_rim_idx = i
+            break
+    
+    # RIGHT SIDE: Find steepest positive slope (going up from crater)
+    right_slopes = first_derivative[right_section]
+    right_steepest_idx_local = np.argmax(right_slopes)  # Local index in right section
+    right_steepest_idx = floor_idx + right_steepest_idx_local  # Convert to global index
+    right_steepest_slope = right_slopes[right_steepest_idx_local]
+    right_threshold = threshold_fraction * abs(right_steepest_slope)
+    
+    # Search outward from the STEEPEST SLOPE point (not from floor)
+    right_rim_idx = len(distance) - 1  # Default to edge if not found
+    for i in range(right_steepest_idx, len(distance)):
+        if abs(first_derivative[i]) < right_threshold:
+            right_rim_idx = i
+            break
+    
+    left_rim_distance = distance[left_rim_idx]
+    right_rim_distance = distance[right_rim_idx]
+    
+    return left_rim_idx, right_rim_idx, left_rim_distance, right_rim_distance, first_derivative
+
+
 def detrend_profile(distance, elevation):
     """
     Remove large-scale slope effects from a profile by subtracting a linear least squares fit.
