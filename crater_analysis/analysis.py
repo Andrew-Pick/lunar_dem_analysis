@@ -350,11 +350,14 @@ def find_crater_rims(distance, elevation, floor_idx, threshold_fraction=0.1):
     
     # Search outward from the STEEPEST SLOPE point (not from floor)
     # This avoids picking the crater floor as the rim
-    left_rim_idx = 0  # Default to edge if not found
+    left_rim_idx = None
     for i in range(left_steepest_idx, -1, -1):
         if abs(first_derivative[i]) < left_threshold:
             left_rim_idx = i
             break
+            
+    if left_rim_idx is None:
+        raise ValueError("Left rim not found: slope did not decrease below threshold.")
     
     # RIGHT SIDE: Find steepest positive slope (going up from crater)
     right_slopes = first_derivative[right_section]
@@ -364,11 +367,14 @@ def find_crater_rims(distance, elevation, floor_idx, threshold_fraction=0.1):
     right_threshold = threshold_fraction * abs(right_steepest_slope)
     
     # Search outward from the STEEPEST SLOPE point (not from floor)
-    right_rim_idx = len(distance) - 1  # Default to edge if not found
+    right_rim_idx = None
     for i in range(right_steepest_idx, len(distance)):
         if abs(first_derivative[i]) < right_threshold:
             right_rim_idx = i
             break
+            
+    if right_rim_idx is None:
+        raise ValueError("Right rim not found: slope did not decrease below threshold.")
     
     left_rim_distance = distance[left_rim_idx]
     right_rim_distance = distance[right_rim_idx]
@@ -410,6 +416,44 @@ def detrend_profile(distance, elevation):
     linear_trend = poly(distance)
     
     # Subtract the trend from the elevation
+    detrended_elevation = elevation - linear_trend
+    
+    return detrended_elevation, slope, intercept
+
+
+def detrend_profile_robust(distance, elevation, fraction=0.2):
+    """
+    Remove large-scale slope effects by fitting a trend to the profile edges only.
+    This avoids the crater shape biasing the trend line.
+    
+    Parameters:
+    - distance (np.array): Distance along the profile
+    - elevation (np.array): Elevation values
+    - fraction (float): Fraction of the profile at each end to use for fitting (default 0.2)
+    
+    Returns:
+    - tuple: (detrended_elevation, slope, intercept)
+    """
+    n = len(distance)
+    n_edge = int(n * fraction)
+    
+    # Select points from the start and end of the profile
+    mask = np.zeros(n, dtype=bool)
+    mask[:n_edge] = True
+    mask[-n_edge:] = True
+    
+    dist_fit = distance[mask]
+    elev_fit = elevation[mask]
+    
+    # Fit linear trend to these points
+    poly = np.polynomial.Polynomial.fit(dist_fit, elev_fit, deg=1)
+    
+    intercept = poly.coef[0]
+    slope = poly.coef[1]
+    
+    # Calculate trend for the whole profile
+    linear_trend = poly(distance)
+    
     detrended_elevation = elevation - linear_trend
     
     return detrended_elevation, slope, intercept
