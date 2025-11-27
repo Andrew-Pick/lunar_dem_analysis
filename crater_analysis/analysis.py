@@ -298,6 +298,20 @@ def find_crater_floor(distance, elevation):
     return floor_idx, floor_distance, floor_elevation, second_derivative
 
 
+def find_crater_floor_max_curv(distance, elevation):
+    # Calculate first derivative using central differences
+    first_derivative = np.gradient(elevation, distance)
+    
+    # Calculate second derivative using central differences
+    second_derivative = np.gradient(first_derivative, distance)
+
+    floor_idx = np.argmax(second_derivative)
+    floor_distance = distance[floor_idx]
+    floor_elevation = elevation[floor_idx]
+    
+    return floor_idx, floor_distance, floor_elevation, second_derivative
+
+
 def find_crater_rims(distance, elevation, floor_idx, threshold_fraction=0.1):
     """
     Find crater rims using the Rubanenko et al. method.
