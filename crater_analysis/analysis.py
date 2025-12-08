@@ -35,13 +35,13 @@ def calculate_crater_depth(dem_data, crater_center, crater_rim_radius):
 
 def filter_craters(
     crater_data, 
-    pole='north', 
+    pole='south', 
     lat_threshold=60, 
     circ_threshold=None, 
     diam_min=None, 
     diam_max=None,
-    lat_col='LAT_CIRC_IMG',
-    diam_col='DIAM_CIRC_IMG',
+    lat_col='lat',
+    diam_col='diameter_m',
     circ_col='circ'
 ):
     """
@@ -539,3 +539,500 @@ def get_dem_snippet(dem_data, metadata, crater_lon, crater_lat, crater_diam_km, 
     center_in_snippet_col = col - min_col
     
     return dem_snippet, snippet_metadata, (center_in_snippet_row, center_in_snippet_col)
+
+
+class CraterDepthAnalyzer:
+    """
+    Automated crater depth analysis pipeline following Rubanenko et al. methodology.
+    
+    This class encapsulates the entire workflow from loading data to generating
+    d/D vs latitude plots comparing catalog and measured depths.
+    
+    Example:
+    >>> from crater_analysis.io import read_dem, read_crater_locations
+    >>> from crater_analysis.analysis import CraterDepthAnalyzer
+    >>> 
+    >>> # Load DEM and catalog
+    >>> dem, metadata = read_dem('data/dems/LDEM_60S_120M.JP2')
+    >>> craters = read_crater_locations('data/catalogs/moon_data.csv')
+    >>> 
+    >>> # Create analyzer
+    >>> analyzer = CraterDepthAnalyzer(
+    ...     dem=dem,
+    ...     metadata=metadata,
+    ...     catalog_data=craters,
+    ...     pole='south',
+    ...     lat_threshold=60,
+    ...     lat_col='lat',
+    ...     lon_col='lon',
+    ...     diam_col='diameter_m',
+    ...     depth_col='depth_m',
+    ...     diam_is_meters=True
+    ... )
+    >>> 
+    >>> # Run analysis and plot
+    >>> analyzer.run_analysis()
+    >>> analyzer.plot_d_D_vs_latitude()
+    """
+    
+    def __init__(
+        self,
+        dem,
+        metadata,
+        catalog_data,
+        pole='south',
+        lat_threshold=60,
+        circ_threshold=None,
+        diam_min=None,
+        diam_max=None,
+        lat_col='lat',
+        lon_col='lon',
+        diam_col='diameter_m',
+        depth_col='depth_m',
+        diam_is_meters=True,
+        has_depth=True,
+        sigma=3,
+        detrend_fraction=0.2,
+        profile_factor=1.5,
+        threshold_fraction=0.1,
+        d_D_min=0.025,
+        d_D_max=0.25
+    ):
+        """
+        Initialize the CraterDepthAnalyzer.
+        
+        Parameters:
+        - dem (np.array): DEM elevation data
+        - metadata (dict): DEM metadata with transform and CRS
+        - catalog_data (pd.DataFrame): Crater catalog
+        - pole (str): 'north' or 'south'
+        - lat_threshold (float): Latitude threshold for filtering
+        - circ_threshold (float): Circularity threshold (None to skip)
+        - diam_min (float): Minimum diameter (in units matching diam_is_meters)
+        - diam_max (float): Maximum diameter (in units matching diam_is_meters)
+        - lat_col (str): Name of latitude column
+        - lon_col (str): Name of longitude column
+        - diam_col (str): Name of diameter column
+        - depth_col (str): Name of depth column (ignored if has_depth=False)
+        - diam_is_meters (bool): True if diameter is in meters, False if km
+        - has_depth (bool): True if catalog has depth data
+        - sigma (float): Gaussian smoothing parameter
+        - detrend_fraction (float): Fraction of profile edges for detrending
+        - profile_factor (float): Multiplier for profile length (default 1.5x diameter)
+        - threshold_fraction (float): Rim detection threshold
+        - d_D_min (float): Minimum d/D ratio for quality filter
+        - d_D_max (float): Maximum d/D ratio for quality filter
+        """
+        self.dem = dem
+        self.metadata = metadata
+        self.pole = pole
+        self.lat_col = lat_col
+        self.lon_col = lon_col
+        self.diam_col = diam_col
+        self.depth_col = depth_col
+        self.has_depth = has_depth
+        self.diam_is_meters = diam_is_meters
+        
+        # Processing parameters
+        self.sigma = sigma
+        self.detrend_fraction = detrend_fraction
+        self.profile_factor = profile_factor
+        self.threshold_fraction = threshold_fraction
+        self.d_D_min = d_D_min
+        self.d_D_max = d_D_max
+        
+        # Filter craters
+        self.craters = filter_craters(
+            catalog_data,
+            pole=pole,
+            lat_threshold=lat_threshold,
+            circ_threshold=circ_threshold,
+            diam_min=diam_min,
+            diam_max=diam_max,
+            lat_col=lat_col,
+            diam_col=diam_col
+        )
+        
+        # Results storage
+        self.results = {
+            'measured_depth': [],
+            'catalog_depth': [] if has_depth else None,
+            'catalog_diameter': [],
+            'measured_diameter': [],
+            'latitude': [],
+            'longitude': [],
+            'crater_idx': [],
+            'error_craters': []
+        }
+        
+    def run_analysis(self, verbose=True):
+        """
+        Run the complete crater depth analysis pipeline.
+        
+        Parameters:
+        - verbose (bool): Print progress updates
+        
+        Returns:
+        - dict: Results dictionary with all measurements
+        """
+        if verbose:
+            print(f"Processing {len(self.craters)} craters...")
+        
+        for idx, (_, row) in enumerate(self.craters.iterrows()):
+            try:
+                # Extract crater properties
+                crater_lon = row[self.lon_col]
+                crater_lat = row[self.lat_col]
+                crater_diam_km = row[self.diam_col] / 1000.0 if self.diam_is_meters else row[self.diam_col]
+                
+                if self.has_depth:
+                    catalog_depth = row[self.depth_col]
+                
+                # Get DEM snippet
+                dem_snippet, snippet_meta, _ = get_dem_snippet(
+                    self.dem, self.metadata,
+                    crater_lon, crater_lat,
+                    crater_diam_km,
+                    padding_factor=1.5
+                )
+                
+                # Extract profiles
+                distance_h, elevation_h, _ = get_crater_profile(
+                    dem_snippet, snippet_meta,
+                    crater_lon, crater_lat,
+                    crater_diam_km=crater_diam_km * self.profile_factor,
+                    angle=0
+                )
+                distance_v, elevation_v, _ = get_crater_profile(
+                    dem_snippet, snippet_meta,
+                    crater_lon, crater_lat,
+                    crater_diam_km=crater_diam_km * self.profile_factor,
+                    angle=90
+                )
+                
+                # Detrend and smooth
+                elevation_h_detrended, _, _ = detrend_profile_robust(
+                    distance_h, elevation_h, fraction=self.detrend_fraction
+                )
+                elevation_v_detrended, _, _ = detrend_profile_robust(
+                    distance_v, elevation_v, fraction=self.detrend_fraction
+                )
+                elevation_h_smooth = smooth_profile(elevation_h_detrended, sigma=self.sigma)
+                elevation_v_smooth = smooth_profile(elevation_v_detrended, sigma=self.sigma)
+                
+                # Find floor
+                floor_idx_h, _, _, _ = find_crater_floor(distance_h, elevation_h_smooth)
+                floor_idx_v, _, _, _ = find_crater_floor(distance_v, elevation_v_smooth)
+                
+                # Find rims
+                left_rim_idx_h, right_rim_idx_h, left_rim_dist_h, right_rim_dist_h, _ = find_crater_rims(
+                    distance_h, elevation_h_smooth, floor_idx_h, 
+                    threshold_fraction=self.threshold_fraction
+                )
+                left_rim_idx_v, right_rim_idx_v, left_rim_dist_v, right_rim_dist_v, _ = find_crater_rims(
+                    distance_v, elevation_v_smooth, floor_idx_v,
+                    threshold_fraction=self.threshold_fraction
+                )
+                
+                # Calculate depths
+                center_idx_h = (left_rim_idx_h + right_rim_idx_h) // 2
+                avg_rim_elev_h = (elevation_h_smooth[left_rim_idx_h] + elevation_h_smooth[right_rim_idx_h]) / 2
+                depth_h = avg_rim_elev_h - elevation_h_smooth[center_idx_h]
+                
+                center_idx_v = (left_rim_idx_v + right_rim_idx_v) // 2
+                avg_rim_elev_v = (elevation_v_smooth[left_rim_idx_v] + elevation_v_smooth[right_rim_idx_v]) / 2
+                depth_v = avg_rim_elev_v - elevation_v_smooth[center_idx_v]
+                
+                avg_depth = (depth_h + depth_v) / 2
+                
+                # Calculate diameters
+                diameter_h = right_rim_dist_h - left_rim_dist_h
+                diameter_v = right_rim_dist_v - left_rim_dist_v
+                avg_diameter = (diameter_h + diameter_v) / 2
+                
+                # Quality filter: reasonable d/D ratio
+                d_D_ratio = avg_depth / (avg_diameter * 1000)
+                if self.d_D_min < d_D_ratio < self.d_D_max:
+                    self.results['measured_depth'].append(avg_depth)
+                    if self.has_depth:
+                        self.results['catalog_depth'].append(catalog_depth)
+                    self.results['catalog_diameter'].append(crater_diam_km)
+                    self.results['measured_diameter'].append(avg_diameter)
+                    self.results['latitude'].append(crater_lat)
+                    self.results['longitude'].append(crater_lon)
+                    self.results['crater_idx'].append(idx)
+                
+            except (ValueError, IndexError) as e:
+                self.results['error_craters'].append((idx, str(e)))
+                continue
+            
+            if verbose and (idx + 1) % 50 == 0:
+                print(f"  Processed {idx + 1}/{len(self.craters)} craters...")
+        
+        if verbose:
+            print(f"\nSuccessfully processed {len(self.results['measured_depth'])} craters")
+            print(f"Failed to process {len(self.results['error_craters'])} craters")
+        
+        return self.results
+    
+    def plot_d_D_vs_latitude(
+        self,
+        n_bins=10,
+        figsize=(10, 6),
+        ylim=(0.03, 0.2),
+        show_failed=False,
+        save_path=None
+    ):
+        """
+        Plot d/D ratio vs latitude with catalog and measured data on the same graph.
+        
+        Parameters:
+        - n_bins (int): Number of latitude bins for averaging
+        - figsize (tuple): Figure size (width, height)
+        - ylim (tuple): Y-axis limits for d/D ratio
+        - show_failed (bool): Show failed craters as red X markers
+        - save_path (str): Path to save figure (None = don't save)
+        
+        Returns:
+        - matplotlib.figure.Figure: The created figure
+        """
+        import matplotlib.pyplot as plt
+        
+        if len(self.results['measured_depth']) == 0:
+            raise ValueError("No results to plot. Run run_analysis() first.")
+        
+        # Convert to arrays
+        measured_depths = np.array(self.results['measured_depth'])
+        measured_diameters = np.array(self.results['measured_diameter'])
+        catalog_diameters = np.array(self.results['catalog_diameter'])
+        latitudes = np.array(self.results['latitude'])
+        
+        # Calculate d/D ratios
+        d_D_ratio_measured = measured_depths / (measured_diameters * 1000)
+        
+        # Use absolute latitude
+        abs_latitudes = np.abs(latitudes)
+        
+        # Create DataFrame for binning
+        df = pd.DataFrame({
+            'lat': abs_latitudes,
+            'd_D_measured': d_D_ratio_measured
+        })
+        
+        if self.has_depth:
+            catalog_depths = np.array(self.results['catalog_depth'])
+            d_D_ratio_catalog = catalog_depths / (catalog_diameters * 1000)
+            df['d_D_catalog'] = d_D_ratio_catalog
+        
+        # Binning
+        lat_bins = np.linspace(df['lat'].min(), df['lat'].max(), n_bins + 1)
+        bin_centers = (lat_bins[:-1] + lat_bins[1:]) / 2
+        
+        # Calculate binned statistics for measured data
+        measured_means = []
+        measured_sems = []
+        for i in range(len(lat_bins) - 1):
+            mask = (df['lat'] >= lat_bins[i]) & (df['lat'] < lat_bins[i+1])
+            bin_data = df[mask]['d_D_measured']
+            if len(bin_data) > 0:
+                measured_means.append(bin_data.mean())
+                measured_sems.append(bin_data.std() / np.sqrt(len(bin_data)))
+            else:
+                measured_means.append(np.nan)
+                measured_sems.append(np.nan)
+        
+        measured_means = np.array(measured_means)
+        measured_sems = np.array(measured_sems)
+        
+        # Calculate binned statistics for catalog data if available
+        if self.has_depth:
+            catalog_means = []
+            catalog_sems = []
+            for i in range(len(lat_bins) - 1):
+                mask = (df['lat'] >= lat_bins[i]) & (df['lat'] < lat_bins[i+1])
+                bin_data = df[mask]['d_D_catalog']
+                if len(bin_data) > 0:
+                    catalog_means.append(bin_data.mean())
+                    catalog_sems.append(bin_data.std() / np.sqrt(len(bin_data)))
+                else:
+                    catalog_means.append(np.nan)
+                    catalog_sems.append(np.nan)
+            
+            catalog_means = np.array(catalog_means)
+            catalog_sems = np.array(catalog_sems)
+        
+        # Create plot
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Plot individual points (semi-transparent)
+        if self.has_depth:
+            ax.scatter(abs_latitudes, d_D_ratio_measured, alpha=0.2, s=10, 
+                      color='blue', label='_nolegend_')
+            ax.scatter(abs_latitudes, d_D_ratio_catalog, alpha=0.2, s=10,
+                      color='orange', label='_nolegend_')
+        else:
+            ax.scatter(abs_latitudes, d_D_ratio_measured, alpha=0.3, s=10,
+                      color='blue', label='Measured')
+        
+        # Plot failed craters if requested
+        if show_failed and len(self.results['error_craters']) > 0:
+            failed_indices = [idx for idx, _ in self.results['error_craters']]
+            failed_rows = self.craters.iloc[failed_indices]
+            failed_lats = np.abs(failed_rows[self.lat_col].values)
+            
+            if self.has_depth:
+                failed_depths = failed_rows[self.depth_col].values
+                failed_diams = failed_rows[self.diam_col].values
+                if self.diam_is_meters:
+                    failed_diams = failed_diams / 1000.0
+                failed_d_D = failed_depths / (failed_diams * 1000)
+                ax.scatter(failed_lats, failed_d_D, alpha=0.5, s=20, color='red',
+                          marker='x', label=f'Failed (n={len(failed_indices)})')
+            else:
+                # Just show X markers at a fixed y position if no depth data
+                ax.scatter(failed_lats, np.full_like(failed_lats, ylim[0] + 0.01),
+                          alpha=0.5, s=20, color='red', marker='x',
+                          label=f'Failed (n={len(failed_indices)})')
+        
+        # Plot binned averages
+        ax.errorbar(bin_centers, measured_means, yerr=measured_sems,
+                   color='blue', linewidth=2, marker='o', markersize=6,
+                   capsize=5, label='Measured (binned)')
+        
+        if self.has_depth:
+            ax.errorbar(bin_centers, catalog_means, yerr=catalog_sems,
+                       color='red', linewidth=2, marker='s', markersize=6,
+                       capsize=5, label='Catalog (binned)')
+        
+        ax.set_xlabel('Latitude (degrees)', fontsize=12)
+        ax.set_ylabel('Depth/Diameter Ratio', fontsize=12)
+        
+        title = f'd/D vs Latitude - {self.pole.capitalize()} Pole'
+        if self.has_depth:
+            title += ' (Measured vs Catalog)'
+        ax.set_title(title, fontsize=14)
+        
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        ax.set_ylim(ylim)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Figure saved to {save_path}")
+        
+        plt.show()
+        
+        return fig
+    
+    def get_summary_statistics(self):
+        """
+        Get summary statistics for the analysis results.
+        
+        Returns:
+        - dict: Dictionary containing summary statistics
+        """
+        if len(self.results['measured_depth']) == 0:
+            raise ValueError("No results available. Run run_analysis() first.")
+        
+        measured_depths = np.array(self.results['measured_depth'])
+        measured_diameters = np.array(self.results['measured_diameter'])
+        catalog_diameters = np.array(self.results['catalog_diameter'])
+        
+        d_D_measured = measured_depths / (measured_diameters * 1000)
+        
+        stats = {
+            'n_successful': len(measured_depths),
+            'n_failed': len(self.results['error_craters']),
+            'measured_depth': {
+                'mean': np.mean(measured_depths),
+                'median': np.median(measured_depths),
+                'std': np.std(measured_depths),
+                'min': np.min(measured_depths),
+                'max': np.max(measured_depths)
+            },
+            'measured_diameter': {
+                'mean': np.mean(measured_diameters),
+                'median': np.median(measured_diameters),
+                'std': np.std(measured_diameters),
+                'min': np.min(measured_diameters),
+                'max': np.max(measured_diameters)
+            },
+            'd_D_measured': {
+                'mean': np.mean(d_D_measured),
+                'median': np.median(d_D_measured),
+                'std': np.std(d_D_measured),
+                'min': np.min(d_D_measured),
+                'max': np.max(d_D_measured)
+            }
+        }
+        
+        if self.has_depth:
+            catalog_depths = np.array(self.results['catalog_depth'])
+            d_D_catalog = catalog_depths / (catalog_diameters * 1000)
+            depth_diff = measured_depths - catalog_depths
+            diam_diff = measured_diameters - catalog_diameters
+            
+            stats['catalog_depth'] = {
+                'mean': np.mean(catalog_depths),
+                'median': np.median(catalog_depths),
+                'std': np.std(catalog_depths),
+                'min': np.min(catalog_depths),
+                'max': np.max(catalog_depths)
+            }
+            stats['depth_difference'] = {
+                'mean': np.mean(depth_diff),
+                'median': np.median(depth_diff),
+                'std': np.std(depth_diff),
+                'min': np.min(depth_diff),
+                'max': np.max(depth_diff)
+            }
+            stats['diameter_difference'] = {
+                'mean': np.mean(diam_diff),
+                'median': np.median(diam_diff),
+                'std': np.std(diam_diff),
+                'min': np.min(diam_diff),
+                'max': np.max(diam_diff)
+            }
+            stats['depth_correlation'] = np.corrcoef(catalog_depths, measured_depths)[0, 1]
+            stats['diameter_correlation'] = np.corrcoef(catalog_diameters, measured_diameters)[0, 1]
+        
+        return stats
+    
+    def print_summary(self):
+        """Print a formatted summary of the analysis results."""
+        stats = self.get_summary_statistics()
+        
+        print("\n" + "="*60)
+        print("CRATER DEPTH ANALYSIS SUMMARY")
+        print("="*60)
+        print(f"\nProcessed: {stats['n_successful']} successful, {stats['n_failed']} failed")
+        
+        print(f"\nMeasured Depths:")
+        print(f"  Mean: {stats['measured_depth']['mean']:.1f} m")
+        print(f"  Median: {stats['measured_depth']['median']:.1f} m")
+        print(f"  Std Dev: {stats['measured_depth']['std']:.1f} m")
+        print(f"  Range: {stats['measured_depth']['min']:.1f} - {stats['measured_depth']['max']:.1f} m")
+        
+        print(f"\nMeasured Diameters:")
+        print(f"  Mean: {stats['measured_diameter']['mean']:.2f} km")
+        print(f"  Median: {stats['measured_diameter']['median']:.2f} km")
+        print(f"  Std Dev: {stats['measured_diameter']['std']:.2f} km")
+        print(f"  Range: {stats['measured_diameter']['min']:.2f} - {stats['measured_diameter']['max']:.2f} km")
+        
+        print(f"\nd/D Ratio (Measured):")
+        print(f"  Mean: {stats['d_D_measured']['mean']:.4f}")
+        print(f"  Median: {stats['d_D_measured']['median']:.4f}")
+        print(f"  Std Dev: {stats['d_D_measured']['std']:.4f}")
+        print(f"  Range: {stats['d_D_measured']['min']:.4f} - {stats['d_D_measured']['max']:.4f}")
+        
+        if self.has_depth:
+            print(f"\nCatalog Depths:")
+            print(f"  Mean: {stats['catalog_depth']['mean']:.1f} m")
+            print(f"  Median: {stats['catalog_depth']['median']:.1f} m")
+            print(f"  Std Dev: {stats['catalog_depth']['std']:.1f} m")
+            print(f"  Range: {stats['catalog_depth']['min']:.1f} - {stats['catalog_depth']['max']:.1f} m")
+            
+            print(f"\nDepth Correlation (Catalog vs Measured): {stats['depth_correlation']:.3f}")
+            print(f"Diameter Correlation (Catalog vs Measured): {stats['diameter_correlation']:.3f}")
